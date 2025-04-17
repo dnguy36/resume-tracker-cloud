@@ -6,13 +6,20 @@ import os
 from datetime import datetime
 from pymongo import MongoClient
 from bson.objectid import ObjectId
+from botocore.config import Config
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 
 # Initialize MongoDB
-mongo_uri = os.getenv('MONGO_URI', 'mongodb://localhost:27017/')
-client = MongoClient(mongo_uri)
+mongo_uri = os.getenv('MONGO_URI', 'mongodb://mongodb:27017/')
+client = MongoClient(
+    mongo_uri,
+    maxPoolSize=50,
+    waitQueueTimeoutMS=2500,
+    connectTimeoutMS=2000,
+    serverSelectionTimeoutMS=2000
+)
 db = client.resume_tracker
 
 # Initialize extensions
@@ -25,7 +32,12 @@ s3 = boto3.client(
     's3',
     aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
     aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-    region_name=os.getenv('AWS_REGION')
+    region_name=os.getenv('AWS_REGION'),
+    config=Config(
+        connect_timeout=5,
+        read_timeout=5,
+        retries={'max_attempts': 2}
+    )
 )
 BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
 
@@ -125,7 +137,26 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    return render_template('dashboard.html')
+    # Fetch user's resumes from MongoDB
+    resumes = list(db.resumes.find({'user_id': ObjectId(current_user.id)}))
+    
+    # Add S3 URL to each resume and convert ObjectId to string
+    for resume in resumes:
+        resume['url'] = s3.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': BUCKET_NAME,
+                'Key': resume['s3_key']
+            },
+            ExpiresIn=3600  # URL expires in 1 hour
+        )
+        # Convert ObjectId to string for use in template
+        resume['id'] = str(resume['_id'])
+    
+    # Fetch user's job applications
+    applications = list(db.applications.find({'user_id': ObjectId(current_user.id)}))
+    
+    return render_template('dashboard.html', resumes=resumes, applications=applications)
 
 @app.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -166,6 +197,91 @@ def upload_resume():
                 return redirect(request.url)
     
     return render_template('upload.html')
+
+@app.route('/resume/<resume_id>', methods=['DELETE'])
+@login_required
+def delete_resume(resume_id):
+    try:
+        # Print debug info
+        print(f"Attempting to delete resume with ID: {resume_id}")
+        
+        # Get the resume from MongoDB
+        resume = db.resumes.find_one({
+            '_id': ObjectId(resume_id),
+            'user_id': ObjectId(current_user.id)
+        })
+        
+        if not resume:
+            print(f"Resume not found with ID: {resume_id}")
+            return {'error': 'Resume not found'}, 404
+        
+        print(f"Found resume: {resume.get('filename')}")
+        
+        try:
+            # Delete from S3
+            s3.delete_object(
+                Bucket=BUCKET_NAME,
+                Key=resume['s3_key']
+            )
+            print(f"Deleted from S3: {resume['s3_key']}")
+        except Exception as s3_error:
+            print(f"Error deleting from S3: {str(s3_error)}")
+            return {'error': f"S3 error: {str(s3_error)}"}, 500
+        
+        # Delete from MongoDB
+        result = db.resumes.delete_one({'_id': ObjectId(resume_id)})
+        if result.deleted_count == 1:
+            print(f"Successfully deleted resume from MongoDB")
+            return {'message': 'Resume deleted successfully'}, 200
+        else:
+            print(f"Failed to delete from MongoDB")
+            return {'error': 'Failed to delete from database'}, 500
+            
+    except Exception as e:
+        print(f"Unexpected error in delete_resume: {str(e)}")
+        return {'error': str(e)}, 500
+
+@app.route('/resume/delete/<resume_id>', methods=['POST'])
+@login_required
+def delete_resume_form(resume_id):
+    try:
+        # Print debug info
+        print(f"Form-based delete for resume with ID: {resume_id}")
+        
+        # Get the resume from MongoDB
+        resume = db.resumes.find_one({
+            '_id': ObjectId(resume_id),
+            'user_id': ObjectId(current_user.id)
+        })
+        
+        if not resume:
+            flash('Resume not found', 'danger')
+            return redirect(url_for('dashboard'))
+        
+        # Delete from S3
+        try:
+            s3.delete_object(
+                Bucket=BUCKET_NAME,
+                Key=resume['s3_key']
+            )
+            print(f"Deleted from S3: {resume['s3_key']}")
+        except Exception as s3_error:
+            print(f"Error deleting from S3: {str(s3_error)}")
+            flash(f"Error deleting from S3: {str(s3_error)}", 'danger')
+            return redirect(url_for('dashboard'))
+        
+        # Delete from MongoDB
+        result = db.resumes.delete_one({'_id': ObjectId(resume_id)})
+        if result.deleted_count == 1:
+            flash('Resume deleted successfully', 'success')
+        else:
+            flash('Failed to delete resume from database', 'danger')
+            
+        return redirect(url_for('dashboard'))
+    except Exception as e:
+        print(f"Unexpected error in delete_resume_form: {str(e)}")
+        flash(f"Error: {str(e)}", 'danger')
+        return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True) 
