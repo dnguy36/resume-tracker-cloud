@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Resume Tracker - Manage Your Job Applications{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 text-center">
+        <h1 class="display-4 mb-4">Welcome to Resume Tracker</h1>
+        <p class="lead mb-4">Streamline your job search by managing resumes and tracking applications in one place.</p>
+        
+        <div class="row g-4 mb-5">
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <i class="bi bi-file-earmark-text display-4 text-primary mb-3"></i>
+                        <h5 class="card-title">Resume Management</h5>
+                        <p class="card-text">Upload and manage multiple versions of your resume securely in the cloud.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <i class="bi bi-journal-text display-4 text-primary mb-3"></i>
+                        <h5 class="card-title">Application Tracking</h5>
+                        <p class="card-text">Keep track of all your job applications, interviews, and follow-ups.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <i class="bi bi-envelope display-4 text-primary mb-3"></i>
+                        <h5 class="card-title">Email Integration</h5>
+                        <p class="card-text">Automatically track applications from your email inbox.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+            <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg px-4 gap-3">
+                <i class="bi bi-person-plus"></i> Get Started
+            </a>
+            <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg px-4">
+                <i class="bi bi-box-arrow-in-right"></i> Login
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %} 
