@@ -1,26 +1,23 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
-import os
-from dotenv import load_dotenv
 import boto3
+import os
 from datetime import datetime
-
-# Load environment variables
-load_dotenv()
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///resume_tracker.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
+
+# Initialize MongoDB
+mongo_uri = os.getenv('MONGO_URI', 'mongodb://localhost:27017/')
+client = MongoClient(mongo_uri)
+db = client.resume_tracker
 
 # Initialize extensions
-db = SQLAlchemy(app)
-login_manager = LoginManager(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 # AWS S3 Configuration
@@ -32,55 +29,103 @@ s3 = boto3.client(
 )
 BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
 
-# Models
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128))
-    resumes = db.relationship('Resume', backref='owner', lazy=True)
-    applications = db.relationship('Application', backref='user', lazy=True)
+class User(UserMixin):
+    def __init__(self, user_data):
+        self.user_data = user_data
+        self.id = str(user_data['_id'])  # Convert ObjectId to string
+        self.username = user_data['username']
+        self.email = user_data['email']
+        self.password = user_data['password']
 
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
+    @staticmethod
+    def get_by_email(email):
+        user_data = db.users.find_one({'email': email})
+        if user_data:
+            return User(user_data)
+        return None
+
+    @staticmethod
+    def create(username, email, password):
+        hashed_password = generate_password_hash(password)
+        user_data = {
+            'username': username,
+            'email': email,
+            'password': hashed_password
+        }
+        result = db.users.insert_one(user_data)
+        user_data['_id'] = result.inserted_id
+        return User(user_data)
 
     def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
+        return check_password_hash(self.password, password)
 
-class Resume(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    filename = db.Column(db.String(255), nullable=False)
-    s3_key = db.Column(db.String(255), nullable=False)
-    upload_date = db.Column(db.DateTime, default=datetime.utcnow)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    applications = db.relationship('Application', backref='resume', lazy=True)
-
-class Application(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    company = db.Column(db.String(100), nullable=False)
-    position = db.Column(db.String(100), nullable=False)
-    status = db.Column(db.String(50), nullable=False)
-    application_date = db.Column(db.DateTime, default=datetime.utcnow)
-    notes = db.Column(db.Text)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    resume_id = db.Column(db.Integer, db.ForeignKey('resume.id'), nullable=False)
+    def get_id(self):
+        return str(self.user_data['_id'])  # Convert ObjectId to string for Flask-Login
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    try:
+        user_data = db.users.find_one({'_id': ObjectId(user_id)})
+        if user_data:
+            return User(user_data)
+    except:
+        return None
+    return None
 
 # Routes
 @app.route('/')
 def index():
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
     return render_template('index.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        if db.users.find_one({'email': email}):
+            flash('Email already registered')
+            return redirect(url_for('register'))
+        
+        if db.users.find_one({'username': username}):
+            flash('Username already taken')
+            return redirect(url_for('register'))
+        
+        user = User.create(username, email, password)
+        login_user(user)
+        
+        flash('Registration successful!')
+        return redirect(url_for('dashboard'))
+    
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        user = User.get_by_email(email)
+        
+        if user and user.check_password(password):
+            login_user(user)
+            return redirect(url_for('dashboard'))
+        
+        flash('Invalid email or password')
+        return redirect(url_for('login'))
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('index'))
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    applications = Application.query.filter_by(user_id=current_user.id).order_by(Application.application_date.desc()).all()
-    resumes = Resume.query.filter_by(user_id=current_user.id).all()
-    return render_template('dashboard.html', applications=applications, resumes=resumes)
+    return render_template('dashboard.html')
 
 @app.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -96,54 +141,31 @@ def upload_resume():
             return redirect(request.url)
         
         if file:
-            filename = secure_filename(file.filename)
-            s3_key = f"resumes/{current_user.id}/{filename}"
-            
             try:
+                # Upload to S3
+                s3_key = f"resumes/{current_user.id}/{file.filename}"
                 s3.upload_fileobj(
                     file,
                     BUCKET_NAME,
-                    s3_key,
-                    ExtraArgs={'ContentType': file.content_type}
+                    s3_key
                 )
                 
-                resume = Resume(
-                    filename=filename,
-                    s3_key=s3_key,
-                    user_id=current_user.id
-                )
-                db.session.add(resume)
-                db.session.commit()
+                # Save to MongoDB
+                resume_data = {
+                    'filename': file.filename,
+                    's3_key': s3_key,
+                    'upload_date': datetime.utcnow(),
+                    'user_id': ObjectId(current_user.id)
+                }
+                db.resumes.insert_one(resume_data)
                 
                 flash('Resume uploaded successfully!')
                 return redirect(url_for('dashboard'))
             except Exception as e:
-                flash(f'Error uploading file: {str(e)}')
+                flash(f'Error uploading resume: {str(e)}')
                 return redirect(request.url)
     
     return render_template('upload.html')
 
-@app.route('/application/new', methods=['GET', 'POST'])
-@login_required
-def new_application():
-    if request.method == 'POST':
-        application = Application(
-            company=request.form['company'],
-            position=request.form['position'],
-            status=request.form['status'],
-            notes=request.form.get('notes', ''),
-            user_id=current_user.id,
-            resume_id=request.form['resume_id']
-        )
-        db.session.add(application)
-        db.session.commit()
-        flash('Application added successfully!')
-        return redirect(url_for('dashboard'))
-    
-    resumes = Resume.query.filter_by(user_id=current_user.id).all()
-    return render_template('new_application.html', resumes=resumes)
-
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    app.run(debug=True) 
+    app.run(host='0.0.0.0', debug=True) 

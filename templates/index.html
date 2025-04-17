@@ -1,52 +1,50 @@
 {% extends "base.html" %}
 
-{% block title %}Resume Tracker - Manage Your Job Applications{% endblock %}
+{% block title %}Home - Resume Tracker{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8 text-center">
         <h1 class="display-4 mb-4">Welcome to Resume Tracker</h1>
-        <p class="lead mb-4">Streamline your job search by managing resumes and tracking applications in one place.</p>
+        <p class="lead mb-4">Manage your job applications and resumes in one place</p>
         
-        <div class="row g-4 mb-5">
-            <div class="col-md-4">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <i class="bi bi-file-earmark-text display-4 text-primary mb-3"></i>
-                        <h5 class="card-title">Resume Management</h5>
-                        <p class="card-text">Upload and manage multiple versions of your resume securely in the cloud.</p>
-                    </div>
-                </div>
+        {% if current_user.is_authenticated %}
+            <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+                <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg px-4 gap-3">Go to Dashboard</a>
+                <a href="{{ url_for('upload_resume') }}" class="btn btn-outline-secondary btn-lg px-4">Upload Resume</a>
             </div>
-            
-            <div class="col-md-4">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <i class="bi bi-journal-text display-4 text-primary mb-3"></i>
-                        <h5 class="card-title">Application Tracking</h5>
-                        <p class="card-text">Keep track of all your job applications, interviews, and follow-ups.</p>
-                    </div>
-                </div>
+        {% else %}
+            <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+                <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg px-4 gap-3">Get Started</a>
+                <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg px-4">Login</a>
             </div>
-            
-            <div class="col-md-4">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <i class="bi bi-envelope display-4 text-primary mb-3"></i>
-                        <h5 class="card-title">Email Integration</h5>
-                        <p class="card-text">Automatically track applications from your email inbox.</p>
-                    </div>
-                </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Secure Storage</h5>
+                <p class="card-text">Your resumes are securely stored in AWS S3 with industry-standard encryption.</p>
             </div>
         </div>
-        
-        <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
-            <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg px-4 gap-3">
-                <i class="bi bi-person-plus"></i> Get Started
-            </a>
-            <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg px-4">
-                <i class="bi bi-box-arrow-in-right"></i> Login
-            </a>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Easy Tracking</h5>
+                <p class="card-text">Keep track of all your job applications and their status in one place.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Smart Organization</h5>
+                <p class="card-text">Automatically organize and categorize your applications for easy reference.</p>
+            </div>
         </div>
     </div>
 </div>

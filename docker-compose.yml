@@ -5,30 +5,27 @@ services:
     build: .
     ports:
       - "5000:5000"
+    volumes:
+      - .:/app
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/resume_tracker
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - MONGO_URI=${MONGO_URI}
       - SECRET_KEY=${SECRET_KEY}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
     depends_on:
-      - db
-    volumes:
-      - ./uploads:/app/uploads
-    restart: unless-stopped
+      - mongodb
 
-  db:
-    image: postgres:13
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=resume_tracker
+  mongodb:
+    image: mongo:latest
     ports:
-      - "5432:5432"
-    restart: unless-stopped
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
 
 volumes:
-  postgres_data: 
+  mongodb_data: 
