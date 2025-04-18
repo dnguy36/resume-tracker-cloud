@@ -16,6 +16,7 @@ import json
 import base64
 import re
 from email.utils import parsedate_to_datetime
+import openai
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -33,6 +34,14 @@ app.config['SESSION_TYPE'] = 'filesystem'
 
 # Initialize Flask-Session
 Session(app)
+
+# Initialize OpenAI client
+openai_api_key = os.getenv('OPENAI_API_KEY')
+if openai_api_key:
+    openai_client = openai.OpenAI(api_key=openai_api_key)
+else:
+    print("WARNING: OPENAI_API_KEY not set. OpenAI features will not work.")
+    openai_client = None
 
 # Initialize MongoDB
 try:
@@ -150,7 +159,7 @@ def gmail_disconnect():
 @app.route('/api/gmail/sync', methods=['POST'])
 @login_required
 def sync_gmail():
-    """Sync job applications from Gmail."""
+    """Sync job applications from Gmail using AI analysis."""
     if 'gmail_credentials' not in session:
         return jsonify({'error': 'Gmail not authenticated'}), 401
 
@@ -159,7 +168,7 @@ def sync_gmail():
         gmail_service = GmailService()
         gmail_service.initialize_service(session['gmail_credentials'])
 
-        # Fetch and parse emails
+        # Fetch and parse emails with AI
         applications = gmail_service.fetch_job_application_emails()
         
         # Save new applications to MongoDB
@@ -179,9 +188,11 @@ def sync_gmail():
                     'company': app_data['company'],
                     'position': app_data['position'],
                     'status': app_data['status'],
+                    'status_color': app_data.get('status_color', 'primary'),
                     'application_date': app_data['application_date'],
                     'source': app_data['source'],
                     'email_id': app_data['email_id'],
+                    'confidence': app_data.get('confidence', 100),  # Add AI confidence score
                     'created_at': datetime.utcnow(),
                     'updated_at': datetime.utcnow()
                 }
@@ -190,12 +201,41 @@ def sync_gmail():
                 new_applications.append(app_data)
 
         return jsonify({
-            'message': f'Successfully synced {len(new_applications)} new applications',
-            'applications': new_applications
+            'message': f'Successfully synced {len(new_applications)} new applications using AI analysis',
+            'applications': new_applications,
+            'stats': {
+                'total_processed': len(applications),
+                'new_added': len(new_applications),
+                'source': 'Gmail AI Analysis'
+            }
         })
 
     except Exception as e:
         print(f"Error syncing Gmail: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# Test route for OpenAI
+@app.route('/api/test-openai', methods=['GET'])
+def test_openai():
+    if not openai_client:
+        return jsonify({'error': 'OpenAI API key not configured'}), 500
+    
+    try:
+        # Simple test completion
+        response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Hello, are you working?"}
+            ]
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'OpenAI API connection successful',
+            'response': response.choices[0].message.content
+        })
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 # Add a root route to verify the server is working
@@ -611,22 +651,107 @@ class GmailService:
             
         return True
 
+    def analyze_email_with_openai(self, subject, body, from_header):
+        """Use OpenAI to analyze an email and determine if it's a job application."""
+        if not openai_client:
+            raise Exception("OpenAI client not configured")
+        
+        # Prepare the prompt
+        email_content = f"Subject: {subject}\nFrom: {from_header}\n\nBody:\n{body[:1500]}..."  # Limit to avoid token limits
+        
+        prompt = {
+            "role": "system", 
+            "content": """
+            You are an assistant that analyzes emails to determine if they are job application confirmations or receipts.
+            
+            Be very strict in your analysis - only identify an email as a job application if:
+            1. It explicitly confirms a job application was submitted
+            2. It's sent directly from a company or its recruiting system (not a job board unless it confirms a specific application)
+            3. It's about a specific job the user has actually applied to
+            
+            DO NOT classify these as job applications:
+            - Credit card applications or financial services
+            - Job alerts or notifications about new job postings
+            - General newsletters from job boards
+            - Marketing emails from companies
+            - Emails that just mention jobs but don't confirm an actual application
+            
+            For status, determine one of:
+            - "Applied" (default for confirmations)
+            - "Rejected" (if it contains rejection language)
+            - "Interview" (if it's scheduling/requesting an interview)
+            - "Offer" (if it's extending a job offer)
+            
+            Extract the following information:
+            1. Is this a job application confirmation or receipt? (yes/no)
+            2. If yes, what's the company name? (be specific and accurate)
+            3. What position/role was applied for?
+            4. What's the application status? (Applied, Rejected, Interview, Offer)
+            5. Is this an automated job alert rather than an actual application? (yes/no)
+            
+            Return your analysis in JSON format:
+            {
+                "is_job_application": true/false,
+                "is_job_alert": true/false,
+                "company_name": "Company Name",
+                "position": "Position Title",
+                "status": "Status",
+                "confidence": 0-100
+            }
+            
+            Be especially careful about credit card applications and other financial services - these are NOT job applications.
+            """
+        }
+        
+        try:
+            response = openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    prompt,
+                    {"role": "user", "content": email_content}
+                ],
+                temperature=0.1  # Low temperature for more deterministic results
+            )
+            
+            result_text = response.choices[0].message.content
+            
+            # Try to parse the JSON response
+            try:
+                # Find JSON in the response (in case there's additional text)
+                import re
+                json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+                if json_match:
+                    result_json = json.loads(json_match.group(0))
+                else:
+                    result_json = json.loads(result_text)
+                
+                return result_json
+            except json.JSONDecodeError:
+                print(f"Failed to parse OpenAI response as JSON: {result_text}")
+                # Return a default structure
+                return {
+                    "is_job_application": False,
+                    "is_job_alert": True,
+                    "company_name": None,
+                    "position": None,
+                    "status": None,
+                    "confidence": 0
+                }
+                
+        except Exception as e:
+            print(f"Error calling OpenAI API: {str(e)}")
+            raise
+
     def fetch_job_application_emails(self, max_results=100):
-        """Fetch and parse job application confirmation emails."""
+        """Fetch and parse job application confirmation emails using AI."""
         if not self.service:
             raise Exception("Gmail service not initialized")
 
-        # Case-insensitive search query using Gmail's {} syntax
+        # Use a broader search to catch potential job emails
         query = """
         (
-            subject:{application received} OR
-            subject:{application confirmation} OR
-            subject:{thank you for applying} OR
-            subject:{application submitted} OR
-            subject:{we received your application} OR
-            subject:{we have received your application} OR
-            subject:{your application has been received} OR
-            subject:{your application has been submitted}
+            subject:(job OR application OR position OR career OR opportunity OR applied OR thank you) 
+            -subject:(newsletter OR digest OR weekly)
         )
         """
         
@@ -642,8 +767,10 @@ class GmailService:
                 print("No messages found matching the query")
                 return []
 
-            print(f"Found {len(messages)} potential job application emails")
+            print(f"Found {len(messages)} potential job-related emails")
             applications = []
+            processed_count = 0
+            job_app_count = 0
 
             for message in messages:
                 try:
@@ -661,35 +788,54 @@ class GmailService:
                     
                     # Get email body
                     body = self._get_email_body(msg['payload'])
-
-                    # Extract company name and position
-                    company_name = self._extract_company_name(subject, body, from_header)
-                    position = self._extract_position(subject, body)
-
-                    if company_name:  # Only add if we found a company name
-                        # Determine application status
-                        status = 'Rejected' if any(phrase in body.lower() for phrase in [
-                            'regret to inform',
-                            'not moving forward',
-                            'not be pursuing',
-                            'not selected',
-                            'decided to proceed with other candidates',
-                            'unfortunately'
-                        ]) else 'Applied'
-
+                    
+                    # Skip emails that are obviously not job applications
+                    if any(phrase.lower() in subject.lower() for phrase in ['credit card', 'banking', 'financial', 'insurance']):
+                        print(f"Skipping likely non-job email: {subject}")
+                        continue
+                        
+                    # Use OpenAI to analyze the email
+                    analysis = self.analyze_email_with_openai(subject, body, from_header)
+                    processed_count += 1
+                    
+                    # Only add if OpenAI determined it's a job application with high confidence
+                    # and not just an alert, and ensure it has a minimum confidence level
+                    if (analysis.get('is_job_application', False) and 
+                        not analysis.get('is_job_alert', True) and 
+                        analysis.get('confidence', 0) > 70):
+                        
+                        job_app_count += 1
+                        company_name = analysis.get('company_name', 'Unknown Company')
+                        position = analysis.get('position', 'Unknown Position')
+                        status = analysis.get('status', 'Applied')
+                        
+                        # Generate a status color for display
+                        status_color = 'primary'  # Default blue
+                        if status.lower() == 'rejected':
+                            status_color = 'danger'  # Red
+                        elif status.lower() == 'interview':
+                            status_color = 'success'  # Green
+                        elif status.lower() == 'offer':
+                            status_color = 'warning'  # Yellow/Orange
+                        
                         applications.append({
                             'company': company_name,
-                            'position': position or 'Position Not Found',
+                            'position': position,
                             'application_date': parsedate_to_datetime(date_str).isoformat(),
                             'status': status,
-                            'source': 'Gmail',
-                            'email_id': message['id']
+                            'status_color': status_color,
+                            'source': 'Gmail (AI Analysis)',
+                            'email_id': message['id'],
+                            'confidence': analysis.get('confidence', 50)
                         })
+                        
+                        print(f"AI detected job application - Company: {company_name}, Position: {position}, Status: {status}")
 
                 except Exception as e:
                     print(f"Error processing message {message['id']}: {str(e)}")
                     continue
 
+            print(f"Processed {processed_count} emails, found {job_app_count} job applications")
             return applications
 
         except Exception as e:

@@ -234,7 +234,7 @@ export default function Dashboard() {
                             Applied: {new Date(app.application_date).toLocaleDateString()}
                           </small>
                         </div>
-                        <span className={`badge bg-${app.status_color}`}>
+                        <span className={`badge bg-${app.status_color || 'primary'}`}>
                           {app.status}
                         </span>
                       </div>
