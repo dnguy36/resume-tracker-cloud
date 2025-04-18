@@ -13,9 +13,12 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.1",
-    "bootstrap": "^5.3.3",
+    "bootstrap": "^5.2.3",
     "@fortawesome/fontawesome-free": "^6.5.1",
-    "@fortawesome/react-fontawesome": "^0.2.0"
+    "@fortawesome/react-fontawesome": "^0.2.0",
+    "react-bootstrap": "^2.7.0",
+    "@types/react-bootstrap": "^0.32.32",
+    "react-hot-toast": "^2.4.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",

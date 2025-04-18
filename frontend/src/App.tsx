@@ -7,6 +7,7 @@ import Dashboard from './components/Dashboard';
 import UploadResume from './components/UploadResume';
 import { AuthContext } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { Toaster } from 'react-hot-toast';
 import './App.css';
 
 interface User {
@@ -49,6 +50,7 @@ function App() {
       <AuthContext.Provider value={{ user, setUser }}>
         <Router>
           <div className="App">
+            <Toaster position="top-right" />
             <Navbar />
             <div className="container mt-4">
               <Routes>

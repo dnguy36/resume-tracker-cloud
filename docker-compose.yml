@@ -2,11 +2,14 @@ version: '3.8'
 
 services:
   web:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "5000:5000"
     volumes:
       - .:/app
+      - /app/node_modules
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=development
@@ -17,6 +20,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+    restart: unless-stopped
 
 volumes:
   mongodb_data: 
