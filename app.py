@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, request, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import boto3
@@ -7,20 +7,39 @@ from datetime import datetime
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from botocore.config import Config
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:5173"],
+        "methods": ["GET", "POST", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": True
+    }
+})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
 
 # Initialize MongoDB
-mongo_uri = os.getenv('MONGO_URI', 'mongodb://mongodb:27017/')
-client = MongoClient(
-    mongo_uri,
-    maxPoolSize=50,
-    waitQueueTimeoutMS=2500,
-    connectTimeoutMS=2000,
-    serverSelectionTimeoutMS=2000
-)
-db = client.resume_tracker
+try:
+    mongo_uri = os.getenv('MONGO_URI', 'mongodb+srv://<username>:<password>@<cluster>.mongodb.net/resume_tracker?retryWrites=true&w=majority')
+    print(f"Connecting to MongoDB at: {mongo_uri}")
+    client = MongoClient(
+        mongo_uri,
+        maxPoolSize=50,
+        waitQueueTimeoutMS=2500,
+        connectTimeoutMS=2000,
+        serverSelectionTimeoutMS=2000
+    )
+    # Test the connection
+    client.admin.command('ping')
+    print("Successfully connected to MongoDB")
+    db = client.resume_tracker
+except Exception as e:
+    print(f"MongoDB connection error: {str(e)}")
+    raise  # This will stop the application if MongoDB isn't available
 
 # Initialize extensions
 login_manager = LoginManager()
@@ -41,10 +60,30 @@ s3 = boto3.client(
 )
 BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
 
+# Add a root route to verify the server is working
+@app.route('/')
+def index():
+    return jsonify({
+        'message': 'Resume Tracker API is running',
+        'status': 'ok',
+        'version': '1.0.0'
+    })
+
+@app.route('/api/check-auth', methods=['GET'])
+@login_required
+def check_auth():
+    return jsonify({
+        'user': {
+            'id': current_user.id,
+            'username': current_user.username,
+            'email': current_user.email
+        }
+    })
+
 class User(UserMixin):
     def __init__(self, user_data):
         self.user_data = user_data
-        self.id = str(user_data['_id'])  # Convert ObjectId to string
+        self.id = str(user_data['_id'])
         self.username = user_data['username']
         self.email = user_data['email']
         self.password = user_data['password']
@@ -72,7 +111,7 @@ class User(UserMixin):
         return check_password_hash(self.password, password)
 
     def get_id(self):
-        return str(self.user_data['_id'])  # Convert ObjectId to string for Flask-Login
+        return str(self.user_data['_id'])
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -84,204 +123,185 @@ def load_user(user_id):
         return None
     return None
 
-# Routes
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/register', methods=['GET', 'POST'])
+# API Routes
+@app.route('/api/register', methods=['POST'])
 def register():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        email = request.form.get('email')
-        password = request.form.get('password')
-        
-        if db.users.find_one({'email': email}):
-            flash('Email already registered')
-            return redirect(url_for('register'))
-        
-        if db.users.find_one({'username': username}):
-            flash('Username already taken')
-            return redirect(url_for('register'))
-        
-        user = User.create(username, email, password)
-        login_user(user)
-        
-        flash('Registration successful!')
-        return redirect(url_for('dashboard'))
+    data = request.get_json()
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
     
-    return render_template('register.html')
+    if db.users.find_one({'email': email}):
+        return jsonify({'error': 'Email already registered'}), 400
+    
+    if db.users.find_one({'username': username}):
+        return jsonify({'error': 'Username already taken'}), 400
+    
+    user = User.create(username, email, password)
+    login_user(user)
+    
+    return jsonify({
+        'message': 'Registration successful',
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email
+        }
+    }), 201
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/api/login', methods=['POST'])
 def login():
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({'error': 'Email and password are required'}), 400
+            
         user = User.get_by_email(email)
         
-        if user and user.check_password(password):
-            login_user(user)
-            return redirect(url_for('dashboard'))
+        if not user:
+            return jsonify({'error': 'Invalid email or password'}), 401
+            
+        if not user.check_password(password):
+            return jsonify({'error': 'Invalid email or password'}), 401
+            
+        login_user(user)
         
-        flash('Invalid email or password')
-        return redirect(url_for('login'))
-    
-    return render_template('login.html')
+        return jsonify({
+            'message': 'Login successful',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email
+            }
+        })
+        
+    except Exception as e:
+        print(f"Login error: {str(e)}")  # This will show in the Flask console
+        return jsonify({'error': 'An error occurred during login'}), 500
 
-@app.route('/logout')
+@app.route('/api/logout', methods=['POST'])
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for('index'))
+    return jsonify({'message': 'Logged out successfully'})
 
-@app.route('/dashboard')
+@app.route('/api/dashboard', methods=['GET'])
 @login_required
 def dashboard():
-    # Fetch user's resumes from MongoDB
-    resumes = list(db.resumes.find({'user_id': ObjectId(current_user.id)}))
-    
-    # Add S3 URL to each resume and convert ObjectId to string
-    for resume in resumes:
-        resume['url'] = s3.generate_presigned_url(
-            'get_object',
-            Params={
-                'Bucket': BUCKET_NAME,
-                'Key': resume['s3_key']
-            },
-            ExpiresIn=3600  # URL expires in 1 hour
-        )
-        # Convert ObjectId to string for use in template
-        resume['id'] = str(resume['_id'])
-    
-    # Fetch user's job applications
-    applications = list(db.applications.find({'user_id': ObjectId(current_user.id)}))
-    
-    return render_template('dashboard.html', resumes=resumes, applications=applications)
+    try:
+        # Fetch user's resumes from MongoDB
+        resumes = list(db.resumes.find({'user_id': ObjectId(current_user.id)}))
+        print(f"Found {len(resumes)} resumes for user {current_user.id}")
+        
+        # Add S3 URL to each resume
+        for resume in resumes:
+            try:
+                resume['url'] = s3.generate_presigned_url(
+                    'get_object',
+                    Params={
+                        'Bucket': BUCKET_NAME,
+                        'Key': resume['s3_key']
+                    },
+                    ExpiresIn=3600
+                )
+                resume['id'] = str(resume['_id'])
+                # Convert ObjectId to string for JSON serialization
+                resume['user_id'] = str(resume['user_id'])
+                resume['_id'] = str(resume['_id'])
+                # Convert datetime to string
+                if 'upload_date' in resume:
+                    resume['upload_date'] = resume['upload_date'].isoformat()
+            except Exception as e:
+                print(f"Error generating URL for resume {resume.get('_id')}: {str(e)}")
+                resume['url'] = None
+        
+        # Fetch user's job applications
+        applications = list(db.applications.find({'user_id': ObjectId(current_user.id)}))
+        
+        # Convert ObjectId to string for JSON serialization
+        for app in applications:
+            app['id'] = str(app['_id'])
+            app['user_id'] = str(app['user_id'])
+            app['_id'] = str(app['_id'])
+            # Convert datetime to string
+            if 'apply_date' in app:
+                app['apply_date'] = app['apply_date'].isoformat()
+        
+        print(f"Found {len(applications)} applications for user {current_user.id}")
+        
+        return jsonify({
+            'resumes': resumes,
+            'applications': applications
+        })
+    except Exception as e:
+        print(f"Dashboard error: {str(e)}")
+        return jsonify({'error': 'Failed to fetch dashboard data'}), 500
 
-@app.route('/upload', methods=['GET', 'POST'])
+@app.route('/api/upload', methods=['POST'])
 @login_required
 def upload_resume():
-    if request.method == 'POST':
-        if 'resume' not in request.files:
-            flash('No file selected')
-            return redirect(request.url)
-        
-        file = request.files['resume']
-        if file.filename == '':
-            flash('No file selected')
-            return redirect(request.url)
-        
-        if file:
-            try:
-                # Upload to S3
-                s3_key = f"resumes/{current_user.id}/{file.filename}"
-                s3.upload_fileobj(
-                    file,
-                    BUCKET_NAME,
-                    s3_key
-                )
-                
-                # Save to MongoDB
-                resume_data = {
-                    'filename': file.filename,
-                    's3_key': s3_key,
-                    'upload_date': datetime.utcnow(),
-                    'user_id': ObjectId(current_user.id)
-                }
-                db.resumes.insert_one(resume_data)
-                
-                flash('Resume uploaded successfully!')
-                return redirect(url_for('dashboard'))
-            except Exception as e:
-                flash(f'Error uploading resume: {str(e)}')
-                return redirect(request.url)
+    if 'resume' not in request.files:
+        return jsonify({'error': 'No file selected'}), 400
     
-    return render_template('upload.html')
+    file = request.files['resume']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    try:
+        # Upload to S3
+        s3_key = f"resumes/{current_user.id}/{file.filename}"
+        s3.upload_fileobj(
+            file,
+            BUCKET_NAME,
+            s3_key
+        )
+        
+        # Save to MongoDB
+        resume_data = {
+            'filename': file.filename,
+            's3_key': s3_key,
+            'upload_date': datetime.utcnow(),
+            'user_id': ObjectId(current_user.id)
+        }
+        db.resumes.insert_one(resume_data)
+        
+        return jsonify({'message': 'Resume uploaded successfully'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/resume/<resume_id>', methods=['DELETE'])
+@app.route('/api/resume/<resume_id>', methods=['DELETE'])
 @login_required
 def delete_resume(resume_id):
     try:
-        # Print debug info
-        print(f"Attempting to delete resume with ID: {resume_id}")
-        
-        # Get the resume from MongoDB
         resume = db.resumes.find_one({
             '_id': ObjectId(resume_id),
             'user_id': ObjectId(current_user.id)
         })
         
         if not resume:
-            print(f"Resume not found with ID: {resume_id}")
-            return {'error': 'Resume not found'}, 404
-        
-        print(f"Found resume: {resume.get('filename')}")
-        
-        try:
-            # Delete from S3
-            s3.delete_object(
-                Bucket=BUCKET_NAME,
-                Key=resume['s3_key']
-            )
-            print(f"Deleted from S3: {resume['s3_key']}")
-        except Exception as s3_error:
-            print(f"Error deleting from S3: {str(s3_error)}")
-            return {'error': f"S3 error: {str(s3_error)}"}, 500
-        
-        # Delete from MongoDB
-        result = db.resumes.delete_one({'_id': ObjectId(resume_id)})
-        if result.deleted_count == 1:
-            print(f"Successfully deleted resume from MongoDB")
-            return {'message': 'Resume deleted successfully'}, 200
-        else:
-            print(f"Failed to delete from MongoDB")
-            return {'error': 'Failed to delete from database'}, 500
-            
-    except Exception as e:
-        print(f"Unexpected error in delete_resume: {str(e)}")
-        return {'error': str(e)}, 500
-
-@app.route('/resume/delete/<resume_id>', methods=['POST'])
-@login_required
-def delete_resume_form(resume_id):
-    try:
-        # Print debug info
-        print(f"Form-based delete for resume with ID: {resume_id}")
-        
-        # Get the resume from MongoDB
-        resume = db.resumes.find_one({
-            '_id': ObjectId(resume_id),
-            'user_id': ObjectId(current_user.id)
-        })
-        
-        if not resume:
-            flash('Resume not found', 'danger')
-            return redirect(url_for('dashboard'))
+            return jsonify({'error': 'Resume not found'}), 404
         
         # Delete from S3
-        try:
-            s3.delete_object(
-                Bucket=BUCKET_NAME,
-                Key=resume['s3_key']
-            )
-            print(f"Deleted from S3: {resume['s3_key']}")
-        except Exception as s3_error:
-            print(f"Error deleting from S3: {str(s3_error)}")
-            flash(f"Error deleting from S3: {str(s3_error)}", 'danger')
-            return redirect(url_for('dashboard'))
+        s3.delete_object(
+            Bucket=BUCKET_NAME,
+            Key=resume['s3_key']
+        )
         
         # Delete from MongoDB
         result = db.resumes.delete_one({'_id': ObjectId(resume_id)})
         if result.deleted_count == 1:
-            flash('Resume deleted successfully', 'success')
+            return jsonify({'message': 'Resume deleted successfully'})
         else:
-            flash('Failed to delete resume from database', 'danger')
+            return jsonify({'error': 'Failed to delete from database'}), 500
             
-        return redirect(url_for('dashboard'))
     except Exception as e:
-        print(f"Unexpected error in delete_resume_form: {str(e)}")
-        flash(f"Error: {str(e)}", 'danger')
-        return redirect(url_for('dashboard'))
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True) 
