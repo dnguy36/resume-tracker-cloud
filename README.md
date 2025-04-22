@@ -179,4 +179,4 @@ For support, please open an issue in the GitHub repository or contact the mainta
 - OpenAI for providing the AI capabilities
 - Google for the Gmail API
 - AWS for cloud storage services
-- The open-source community for various tools and libraries 
+- The open-source community for various tools and libraries
