@@ -1,59 +1,55 @@
-# Dat Nguyen's Portfolio Website
+# Personal Portfolio
 
-A modern, responsive portfolio website built with Next.js, showcasing my projects and skills as a Computer Science student at George Mason University.
+A modern, responsive portfolio website built with Next.js and Tailwind CSS, showcasing my projects and skills as a Computer Science student at George Mason University.
 
 ## Features
 
-### Navigation & Header
-- Responsive navigation bar with smooth animations
-- Social media links (GitHub, LinkedIn, Email)
-- Resume download option
-- Mobile-friendly menu
+- 🎨 Modern and responsive design
+- 🌓 Dark/Light mode support
+- 🚀 Smooth animations and transitions
+- 📱 Mobile-friendly navigation
+- 🔍 SEO optimized
+- 📊 Project showcase with detailed descriptions
+- 📬 Contact form with email integration
+- 🔗 Social media integration
 
-### Hero Section
-- Animated introduction with rotating tech stack icons
-- Interactive orbiting circles showcasing technologies
-- Social media quick links
+## Projects Showcased
 
-### Projects Section
-- Dynamic project cards with hover effects
-- Support for both images and videos
-- Technology stack tags
-- GitHub repository links
-- Featured projects:
-  - Job Application Tracker (WIP)
-  - AI Object Detection
-  - Manipulator AI
-  - BringTheMenu
+### Job Application Tracker
+- Automated job application tracking system
+- Email integration with OAuth
+- AI-powered data extraction using OpenAI
+- MongoDB and Amazon S3 for data storage
+- Built with Next.js, TypeScript, and Tailwind CSS
 
-### Contact Section
-- Contact form with email integration
-- Form validation
-- Success/error notifications
+### AI Object Detection
+- Real-time object detection using YOLOv8
+- OpenCV integration for video processing
+- Computer vision and deep learning implementation
+- Python-based solution with high accuracy
 
-## Technologies Used
+### Manipulator AI
+- Web application for practicing manipulation skills
+- Interactive tools and comprehensive landing page
+- Built with Next.js, Express.js, and MongoDB
+- Authentication with Auth0/Clerk
 
-### Frontend
-- Next.js 14
-- React
-- TypeScript
-- Tailwind CSS
-- Framer Motion (animations)
-- Shadcn UI (components)
+### BringTheMenu
+- Smart food discovery platform
+- AI-powered personalized recommendations
+- Built with Vue.js and FastAPI
+- MongoDB integration for data management
 
-### Backend & Services
-- Vercel (deployment)
-- Resend (email service)
-- MongoDB (database)
-- Amazon S3 (storage)
-- OpenAI API (AI integration)
+## Tech Stack
 
-## Recent Updates
-- Added Job Application Tracker project
-- Updated project descriptions and technologies
-- Implemented video support for project showcases
-- Enhanced UI/UX with animations and transitions
-- Added responsive design improvements
+- **Frontend**: Next.js, React, TypeScript, Tailwind CSS
+- **Styling**: Tailwind CSS, Framer Motion
+- **Backend**: Node.js, Express.js
+- **Database**: MongoDB
+- **Cloud Services**: Amazon S3
+- **Authentication**: OAuth, Auth0/Clerk
+- **AI/ML**: OpenAI API, YOLOv8, OpenCV
+- **Deployment**: Vercel
 
 ## Getting Started
 
@@ -74,142 +70,26 @@ npm run dev
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Project Structure
-```
-portfolio/
-├── public/
-│   ├── projects/     # Project images and videos
-│   └── videos/       # Video assets
-├── src/
-│   ├── components/   # React components
-│   ├── constants/    # Configuration files
-│   ├── lib/         # Utility functions
-│   └── app/         # Next.js app directory
-└── package.json
+## Environment Variables
+
+Create a `.env.local` file in the root directory with the following variables:
+
+```env
+NEXT_PUBLIC_EMAIL_SERVICE=your_email_service
+NEXT_PUBLIC_EMAIL_TEMPLATE=your_email_template
+NEXT_PUBLIC_EMAIL_PUBLIC_KEY=your_email_public_key
 ```
 
 ## Contributing
+
 Feel free to fork this repository and make your own changes. Pull requests are welcome!
 
 ## License
-This project is open source and available under the MIT License.
 
-# Job Application Tracker
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-A comprehensive job application tracking system that automatically parses and analyzes job application emails using AI. Built with Next.js, MongoDB, and Amazon S3.
+## Contact
 
-## How It Works
-
-### Email Integration
-- Uses OAuth to securely connect to user's email account
-- Automatically scans incoming emails for job application-related content
-- Extracts key information like company name, position, and application status
-
-### AI-Powered Analysis
-- Leverages OpenAI's API to analyze email content
-- Extracts structured data from unstructured email text
-- Identifies application status (applied, interview, rejected, etc.)
-- Categorizes and tags applications automatically
-
-### Data Storage
-- MongoDB: Stores structured application data
-  - Company information
-  - Position details
-  - Application status
-  - Interview dates
-  - Notes and comments
-- Amazon S3: Stores resumes and related documents
-  - Secure file storage
-  - Easy retrieval and management
-  - Version control for documents
-
-### User Interface
-- Dashboard with application statistics
-- Timeline view of application progress
-- Filter and search capabilities
-- Resume management system
-- Status tracking and updates
-
-## Technical Stack
-
-### Frontend
-- Next.js 14
-- TypeScript
-- Tailwind CSS
-- Framer Motion (animations)
-- Shadcn UI (components)
-
-### Backend
-- MongoDB (database)
-- Amazon S3 (file storage)
-- OpenAI API (email analysis)
-- OAuth (email integration)
-
-## Features
-
-### Email Processing
-- Automatic email scanning
-- AI-powered content analysis
-- Status detection
-- Company information extraction
-
-### Application Management
-- Track application status
-- Store and manage resumes
-- Add notes and comments
-- Set reminders and deadlines
-
-### Analytics
-- Application success rate
-- Interview conversion rate
-- Response time tracking
-- Company distribution
-
-## Getting Started
-
-1. Clone the repository:
-```bash
-git clone https://github.com/dnguy36/resume-tracker-cloud.git
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Set up environment variables:
-```env
-MONGODB_URI=your_mongodb_uri
-AWS_ACCESS_KEY=your_aws_key
-AWS_SECRET_KEY=your_aws_secret
-OPENAI_API_KEY=your_openai_key
-```
-
-4. Run the development server:
-```bash
-npm run dev
-```
-
-## Project Structure
-```
-resume-tracker-cloud/
-├── src/
-│   ├── components/     # React components
-│   ├── lib/           # Utility functions
-│   ├── api/           # API routes
-│   └── app/           # Next.js app directory
-├── public/            # Static assets
-└── package.json
-```
-
-## Current Status
-- Core functionality implemented
-- Email integration working
-- AI analysis operational
-- UI/UX improvements in progress
-
-## Future Enhancements
-- Enhanced analytics dashboard
-- Interview scheduling integration
-- Automated follow-up emails
-- Mobile app development
+- GitHub: [@dnguy36](https://github.com/dnguy36)
+- LinkedIn: [Dat Nguyen](https://www.linkedin.com/in/dat-d-nguyen)
+- Email: datnguyen1393@gmail.com
