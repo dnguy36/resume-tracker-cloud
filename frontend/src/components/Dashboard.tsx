@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import axios from 'axios';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faTrash } from '@fortawesome/free-solid-svg-icons';
 import GmailIntegration from './GmailIntegration';
 import toast from 'react-hot-toast';
+import DashboardMetrics from './DashboardMetrics';
 
 interface Resume {
   id: string;
@@ -146,19 +150,12 @@ export default function Dashboard() {
   return (
     <div className="container mt-4">
       <div className="row mb-4">
-        <div className="col">
-          <h2>Dashboard</h2>
-        </div>
-        <div className="col-auto">
-          <Link to="/upload" className="btn btn-primary">
-            <i className="fas fa-upload me-2"></i>Upload Resume
-          </Link>
+        <div className="col-12">
+          <DashboardMetrics applications={applications} />
         </div>
       </div>
-
       <div className="row">
-        <div className="col-md-8">
-          {/* Resumes Section */}
+        <div className="col-md-6">
           <div className="card mb-4">
             <div className="card-header">
               <h3 className="card-title mb-0">My Resumes</h3>
@@ -199,7 +196,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Job Applications Section */}
           <div className="card">
             <div className="card-header d-flex justify-content-between align-items-center">
               <h3 className="card-title mb-0">Job Applications</h3>
@@ -248,8 +244,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Gmail Integration Section */}
-        <div className="col-md-4">
+        <div className="col-md-6">
           <GmailIntegration
             isAuthenticated={isGmailAuthenticated}
             onSync={handleGmailSync}

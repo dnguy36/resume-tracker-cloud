@@ -5,6 +5,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import UploadResume from './components/UploadResume';
+import LandingPage from './components/LandingPage';
 import { AuthContext } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { Toaster } from 'react-hot-toast';
@@ -54,11 +55,11 @@ function App() {
             <Navbar />
             <div className="container mt-4">
               <Routes>
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" />} />
                 <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
                 <Route path="/register" element={!user ? <Register /> : <Navigate to="/dashboard" />} />
-                <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" />} />
                 <Route path="/upload" element={user ? <UploadResume /> : <Navigate to="/login" />} />
-                <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
               </Routes>
             </div>
           </div>

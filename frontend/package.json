@@ -18,7 +18,9 @@
     "@fortawesome/react-fontawesome": "^0.2.0",
     "react-bootstrap": "^2.7.0",
     "@types/react-bootstrap": "^0.32.32",
-    "react-hot-toast": "^2.4.1"
+    "react-hot-toast": "^2.4.1",
+    "axios": "^1.6.2",
+    "@fortawesome/free-solid-svg-icons": "^6.5.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",
