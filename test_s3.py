@@ -1,8 +1,8 @@
 import boto3
 
 # Replace these with your actual values
-AWS_ACCESS_KEY_ID = 'AKIAV5IIM3CNVI3BST7F'  # Replace with your Access Key ID
-AWS_SECRET_ACCESS_KEY = 'XVwCyoGPYfI/BQPCal5+2KLdjywWKcz9baT4r9YB'  # Replace with your Secret Access Key
+AWS_ACCESS_KEY_ID = 'key'  # Replace with your Access Key ID
+AWS_SECRET_ACCESS_KEY = 'key'  # Replace with your Secret Access Key
 AWS_REGION = 'us-east-1'  # Replace with your region (e.g., 'us-east-1')
 BUCKET_NAME = 'resume-tracker-dnguy'  # Replace with your bucket name
 
