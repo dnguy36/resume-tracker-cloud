@@ -60,4 +60,11 @@ htmlcov/
 .pytest_cache/
 
 # Google OAuth2
-client_secret.json 
+client_secret.json
+
+# Flask session files
+flask_session/
+
+# Local development
+.DS_Store
+Thumbs.db 
