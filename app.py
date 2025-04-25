@@ -17,20 +17,28 @@ import base64
 import re
 from email.utils import parsedate_to_datetime
 import openai
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:5173"],
-        "methods": ["GET", "POST", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type"],
-        "supports_credentials": True
+        "origins": ["http://localhost:5173", "http://localhost:3000", "http://localhost:5174"],  # Added 5174
+        "methods": ["GET", "POST", "DELETE", "OPTIONS", "PATCH"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
+        "expose_headers": ["Content-Type", "Authorization"],
+        "max_age": 600
     }
 })
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
 app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_DOMAIN'] = None  # Allow cross-domain cookies
 
 # Initialize Flask-Session
 Session(app)
@@ -45,19 +53,34 @@ else:
 
 # Initialize MongoDB
 try:
-    mongo_uri = os.getenv('MONGO_URI', 'mongodb+srv://<username>:<password>@<cluster>.mongodb.net/resume_tracker?retryWrites=true&w=majority')
-    print(f"Connecting to MongoDB at: {mongo_uri}")
+    mongo_uri = os.getenv('MONGO_URI')
+    if not mongo_uri:
+        raise ValueError("MONGO_URI environment variable is not set")
+        
+    print(f"Connecting to MongoDB...")
     client = MongoClient(
         mongo_uri,
         maxPoolSize=50,
         waitQueueTimeoutMS=2500,
         connectTimeoutMS=2000,
-        serverSelectionTimeoutMS=2000
+        serverSelectionTimeoutMS=2000,
+        retryWrites=True,
+        w='majority'
     )
     # Test the connection
     client.admin.command('ping')
     print("Successfully connected to MongoDB")
     db = client.resume_tracker
+    
+    # Ensure collections exist
+    if 'applications' not in db.list_collection_names():
+        db.create_collection('applications')
+        print("Created applications collection")
+    
+    if 'resumes' not in db.list_collection_names():
+        db.create_collection('resumes')
+        print("Created resumes collection")
+        
 except Exception as e:
     print(f"MongoDB connection error: {str(e)}")
     raise
@@ -66,6 +89,8 @@ except Exception as e:
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+login_manager.login_message = 'Please log in to access this page.'
+login_manager.login_message_category = 'info'
 
 # AWS S3 Configuration
 s3 = boto3.client(
@@ -91,10 +116,13 @@ def gmail_auth():
     if not os.path.exists(client_secrets_file):
         return jsonify({'error': 'Client secrets file not found'}), 500
 
+    redirect_uri = os.getenv('GOOGLE_OAUTH_REDIRECT_URI')
+    print(f"Using redirect URI: {redirect_uri}")  # Debug log
+
     flow = Flow.from_client_secrets_file(
         client_secrets_file,
         scopes=['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send'],
-        redirect_uri=os.getenv('GOOGLE_OAUTH_REDIRECT_URI')
+        redirect_uri=redirect_uri
     )
     
     authorization_url, state = flow.authorization_url(
@@ -102,9 +130,10 @@ def gmail_auth():
         include_granted_scopes='true'
     )
     
+    print(f"Generated auth URL: {authorization_url}")  # Debug log
     return jsonify({'auth_url': authorization_url})
 
-@app.route('/api/auth/gmail/callback', methods=['GET'])
+@app.route('/gmail/callback', methods=['GET'])
 @login_required
 def gmail_callback():
     """Handle Gmail OAuth2 callback."""
@@ -113,10 +142,13 @@ def gmail_callback():
         return jsonify({'error': 'Authorization code not provided'}), 400
 
     try:
+        redirect_uri = os.getenv('GOOGLE_OAUTH_REDIRECT_URI')
+        print(f"Callback using redirect URI: {redirect_uri}")  # Debug log
+
         flow = Flow.from_client_secrets_file(
             os.getenv('GOOGLE_CLIENT_SECRET_FILE'),
             scopes=['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send'],
-            redirect_uri=os.getenv('GOOGLE_OAUTH_REDIRECT_URI')
+            redirect_uri=redirect_uri
         )
         
         flow.fetch_token(code=auth_code)
@@ -132,9 +164,9 @@ def gmail_callback():
             'scopes': credentials.scopes
         }
         
-        # Redirect back to the frontend dashboard
-        return redirect('http://localhost:5173/dashboard')
+        return jsonify({'success': True, 'message': 'Gmail authentication successful'})
     except Exception as e:
+        print(f"Gmail callback error: {str(e)}")  # Debug log
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/gmail/status', methods=['GET'])
@@ -250,11 +282,13 @@ def index():
 @app.route('/api/check-auth', methods=['GET'])
 @login_required
 def check_auth():
+    """Check if user is authenticated."""
     return jsonify({
+        'authenticated': True,
         'user': {
-            'id': current_user.id,
-            'username': current_user.username,
-            'email': current_user.email
+            'id': str(current_user.id),
+            'email': current_user.email,
+            'username': current_user.username
         }
     })
 
@@ -327,8 +361,11 @@ def register():
         }
     }), 201
 
-@app.route('/api/login', methods=['POST'])
+@app.route('/api/login', methods=['GET', 'POST'])
 def login():
+    if request.method == 'GET':
+        return jsonify({'error': 'Authentication required'}), 401
+        
     try:
         data = request.get_json()
         if not data:
@@ -372,54 +409,84 @@ def logout():
 @app.route('/api/dashboard', methods=['GET'])
 @login_required
 def dashboard():
+    """Get user's dashboard data."""
     try:
-        # Fetch user's resumes from MongoDB
-        resumes = list(db.resumes.find({'user_id': ObjectId(current_user.id)}))
-        print(f"Found {len(resumes)} resumes for user {current_user.id}")
+        if not current_user or not current_user.is_authenticated:
+            print("User not authenticated in dashboard route")
+            return jsonify({'error': 'Not authenticated'}), 401
+
+        print(f"Fetching dashboard data for user: {current_user.id}")
         
-        # Add S3 URL to each resume
-        for resume in resumes:
-            try:
-                resume['url'] = s3.generate_presigned_url(
-                    'get_object',
-                    Params={
-                        'Bucket': BUCKET_NAME,
-                        'Key': resume['s3_key']
-                    },
-                    ExpiresIn=3600
-                )
-                resume['id'] = str(resume['_id'])
-                # Convert ObjectId to string for JSON serialization
-                resume['user_id'] = str(resume['user_id'])
-                resume['_id'] = str(resume['_id'])
-                # Convert datetime to string
-                if 'upload_date' in resume:
-                    resume['upload_date'] = resume['upload_date'].isoformat()
-            except Exception as e:
-                print(f"Error generating URL for resume {resume.get('_id')}: {str(e)}")
-                resume['url'] = None
-        
-        # Fetch user's job applications
-        applications = list(db.applications.find({'user_id': ObjectId(current_user.id)}))
-        
-        # Convert ObjectId to string for JSON serialization
-        for app in applications:
-            app['id'] = str(app['_id'])
-            app['user_id'] = str(app['user_id'])
-            app['_id'] = str(app['_id'])
-            # Convert datetime to string
-            if 'apply_date' in app:
-                app['apply_date'] = app['apply_date'].isoformat()
-        
-        print(f"Found {len(applications)} applications for user {current_user.id}")
-        
-        return jsonify({
-            'resumes': resumes,
-            'applications': applications
-        })
+        try:
+            # Get user's applications
+            applications = list(db.applications.find(
+                {'user_id': ObjectId(current_user.id)}
+            ).sort('created_at', -1))
+            print(f"Found {len(applications)} applications")
+
+            # Get user's resumes
+            resumes = list(db.resumes.find(
+                {'user_id': ObjectId(current_user.id)}
+            ).sort('upload_date', -1))
+            print(f"Found {len(resumes)} resumes")
+
+            # Transform applications
+            transformed_applications = []
+            for app in applications:
+                try:
+                    # Map status to expected values
+                    status = app['status'].lower()
+                    if status not in ['applied', 'interview', 'offer', 'rejected', 'no_response']:
+                        status = 'applied'  # Default to 'applied' if status is unknown
+                    
+                    transformed_applications.append({
+                        'id': str(app['_id']),
+                        'company': app['company'],
+                        'position': app['position'],
+                        'status': status,
+                        'status_color': app.get('status_color', 'primary'),
+                        'application_date': app['application_date'].isoformat() if isinstance(app['application_date'], datetime) else app['application_date'],
+                        'source': app['source'],
+                        'confidence': app.get('confidence', 100)
+                    })
+                except Exception as e:
+                    print(f"Error transforming application {app.get('_id')}: {str(e)}")
+                    continue
+
+            # Transform resumes
+            transformed_resumes = []
+            for resume in resumes:
+                try:
+                    transformed_resumes.append({
+                        'id': str(resume['_id']),
+                        'filename': resume['filename'],
+                        'upload_date': resume['upload_date'].isoformat() if isinstance(resume['upload_date'], datetime) else resume['upload_date'],
+                        'url': resume.get('url', '')  # Use get() with default value
+                    })
+                except Exception as e:
+                    print(f"Error transforming resume {resume.get('_id')}: {str(e)}")
+                    continue
+
+            return jsonify({
+                'applications': transformed_applications,
+                'resumes': transformed_resumes
+            })
+        except Exception as e:
+            print(f"Database error in dashboard route: {str(e)}")
+            # Check if it's a MongoDB connection error
+            if "MongoDB" in str(e):
+                return jsonify({'error': 'Database connection error. Please check your MongoDB connection.'}), 500
+            # Check if it's a BSON error
+            if "BSON" in str(e):
+                return jsonify({'error': 'Invalid data format in database. Please check your data.'}), 500
+            # Check if it's a collection error
+            if "collection" in str(e).lower():
+                return jsonify({'error': 'Database collection error. Please check your database structure.'}), 500
+            return jsonify({'error': f'Database error: {str(e)}'}), 500
+            
     except Exception as e:
-        print(f"Dashboard error: {str(e)}")
-        return jsonify({'error': 'Failed to fetch dashboard data'}), 500
+        print(f"Error in dashboard route: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/upload', methods=['POST'])
 @login_required
@@ -501,10 +568,13 @@ class GmailService:
 
     def get_auth_url(self):
         """Get the authorization URL for Gmail OAuth2."""
+        redirect_uri = os.getenv('GOOGLE_OAUTH_REDIRECT_URI')
+        print(f"GmailService using redirect URI: {redirect_uri}")  # Debug log
+
         flow = Flow.from_client_secrets_file(
             os.getenv('GOOGLE_CLIENT_SECRET_FILE'),
             scopes=['https://www.googleapis.com/auth/gmail.readonly'],
-            redirect_uri=os.getenv('GOOGLE_OAUTH_REDIRECT_URI')
+            redirect_uri=redirect_uri
         )
         authorization_url, _ = flow.authorization_url(
             access_type='offline',
@@ -514,10 +584,13 @@ class GmailService:
 
     def get_credentials(self, auth_code):
         """Get credentials from authorization code."""
+        redirect_uri = os.getenv('GOOGLE_OAUTH_REDIRECT_URI')
+        print(f"GmailService get_credentials using redirect URI: {redirect_uri}")  # Debug log
+
         flow = Flow.from_client_secrets_file(
             os.getenv('GOOGLE_CLIENT_SECRET_FILE'),
             scopes=['https://www.googleapis.com/auth/gmail.readonly'],
-            redirect_uri=os.getenv('GOOGLE_OAUTH_REDIRECT_URI')
+            redirect_uri=redirect_uri
         )
         flow.fetch_token(code=auth_code)
         return flow.credentials

@@ -9,7 +9,6 @@ services:
       - "5000:5000"
     volumes:
       - .:/app
-      - /app/node_modules
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=development
@@ -20,7 +19,14 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI}
+      - GOOGLE_CLIENT_SECRET_FILE=${GOOGLE_CLIENT_SECRET_FILE}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   mongodb_data: 
