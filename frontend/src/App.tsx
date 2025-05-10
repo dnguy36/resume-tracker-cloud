@@ -125,7 +125,7 @@ function App() {
                 />
 
                 <Route 
-                  path="/gmail/callback" 
+                  path="/api/auth/gmail/callback" 
                   element={
                     <ProtectedRoute>
                       <GmailCallback />

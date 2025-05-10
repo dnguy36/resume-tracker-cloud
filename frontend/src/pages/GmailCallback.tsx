@@ -1,25 +1,52 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useGmail } from '../context/GmailContext';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 export default function GmailCallback() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { checkGmailStatus } = useGmail();
+  const { user } = useAuth();
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        await checkGmailStatus();
-        navigate('/dashboard'); // Redirect to dashboard after successful connection
+        console.log('GmailCallback: Starting callback handling');
+        console.log('GmailCallback: Current user:', user);
+        console.log('GmailCallback: URL params:', location.search);
+        
+        // Check if we have the authorization code
+        const params = new URLSearchParams(location.search);
+        const code = params.get('code');
+        if (!code) {
+          console.error('GmailCallback: No authorization code found in URL');
+          toast.error('Failed to connect Gmail: No authorization code');
+          navigate('/dashboard');
+          return;
+        }
+
+        console.log('GmailCallback: Authorization code received');
+        const status = await checkGmailStatus();
+        console.log('GmailCallback: Status after callback:', status);
+        
+        if (status.is_authenticated) {
+          toast.success('Gmail connected successfully');
+        } else {
+          toast.error('Failed to connect Gmail: Not authenticated');
+        }
+        
+        navigate('/dashboard');
       } catch (error) {
+        console.error('GmailCallback: Error during callback handling:', error);
         toast.error('Failed to connect Gmail');
-        navigate('/dashboard'); // Redirect to dashboard even if there's an error
+        navigate('/dashboard');
       }
     };
 
     handleCallback();
-  }, [navigate, checkGmailStatus]);
+  }, [navigate, checkGmailStatus, location, user]);
 
   return (
     <div className="flex items-center justify-center min-h-screen">

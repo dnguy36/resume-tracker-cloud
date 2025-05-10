@@ -20,7 +20,7 @@ interface RegisterResponse {
   };
 }
 
-interface GmailStatusResponse {
+export interface GmailStatusResponse {
   is_authenticated: boolean;
 }
 
